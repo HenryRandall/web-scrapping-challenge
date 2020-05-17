@@ -1,13 +1,9 @@
 # Declare Dependencies 
 from bs4 import BeautifulSoup as bs
 from splinter import Browser
+import requests
 import pandas as pd
 import time #sleep 5 second after browser.visit commands to insure that the browser has loaded
-
-def init_browser():
-    # Define Function for opening browser
-    executable_path = {"executable_path":"chromedriver"}
-    browser = Browser("chrome", **executable_path, headless = False)
 
 # Create Dictionary to collect all of the data
 mars= {}
@@ -41,57 +37,55 @@ def scrape():
 
 
     # # JPL Mars Space Images - Featured Image
-    # Visit Specified URL
-    featured_image_url = "https://www.jpl.nasa.gov/spaceimages/?search=&category=Mars"
-    browser.visit(featured_image_url)
-    time.sleep(5)
+    # Specify url
+    url = "https://www.jpl.nasa.gov/spaceimages/?search=&category=Mars"
 
     # Parse HTML Object 
-    html_image = browser.html
-    soup = bs(html_image, "html.parser")
-
-    # base URL
-    main_url = "https://www.jpl.nasa.gov"
+    response = requests.get(url)
+    soup = bs(response.text, 'lxml')
 
     # Retrieve background-image url from style tag 
-    featured_image_url  = soup.find('article')['style'].replace('background-image: url(','').replace(');', '')[1:-1]
+    image = soup.find('article', class_='carousel_item')['style']
+    featured_image_url =image.split("'")[1]
 
-    # Concatenate URLs and store final
-    featured_image_url = main_url + featured_image_url
+    # Concatinate base and relative url
+    base_url = "https://www.jpl.nasa.gov"
+    featured_image_url = base_url + featured_image_url
     mars['featured_image_url'] = featured_image_url 
 
 
     # # Mars Weather
-    # Visit Mars Weather Twitter through splinter module
-    weather_url = 'https://twitter.com/marswxreport?lang=en'
-    browser.visit(weather_url)
-    time.sleep(5)
+    # Specify url
+    url = 'https://twitter.com/marswxreport?lang=en'
 
     # Parse HTML Object 
-    html_weather = browser.html
-    soup = bs(html_weather, 'html.parser')
+    response = requests.get(url)
+    soup = bs(response.text, 'lxml')
 
     # Find all elements that contain tweets
-    tweets = soup.find_all('div', class_='css-901oao r-hkyrab r-1qd0xha r-a023e6 r-16dba41 r-ad9z0x r-bcqeeo r-bnwqim r-qvutc0')
+    tweets = soup.find_all('div', class_='js-tweet-text-container')
 
-    # Retrieve all elements that contain news title in the specified range
-    # Look for entries that display weather related words to exclude non weather related tweets 
+    # Search through tweets
     for tweet in tweets: 
-        mars_weather = tweet.find('span').text
+        mars_weather = tweet.find('p').text
+    
+        # exclude non weather related tweets
         if 'high' and 'pressure' in mars_weather:
+            # Seperate the link from the tweet and reformate
+            weather=tweet.find('p')
+            link=weather.find('a').extract()
             break
         else: 
             pass
     
     # Store weather text
-    mars['weather']=mars_weather
+    mars['weather']=weather.text
+    mars['weather_link']=link.text
 
 
     # # Mars Facts
     # Visit the mars facts site and parse
     url = "https://space-facts.com/mars/"
-    browser.visit(url)
-    time.sleep(5)
     tables = pd.read_html(url)
 
     # Find Mars Facts DataFrame and assign comlumns
@@ -104,17 +98,17 @@ def scrape():
 
 
     # # Mars Hemispheres
-    # Visit USGS Astrogeology site 
-    hemispheres_url = "https://astrogeology.usgs.gov/search/results?q=hemisphere+enhanced&k1=target&v1=Mars"
-    browser.visit(hemispheres_url)
-    time.sleep(5)
 
-    # Parse HTML Object
-    html_hemispheres = browser.html
-    soup = bs(html_hemispheres, 'html.parser')
 
-    # Retreive all items that contain mars hemispheres information
-    items = soup.find_all('div', class_='item')
+
+    # Specify url
+    url = "https://astrogeology.usgs.gov/search/results?q=hemisphere+enhanced&k1=target&v1=Mars"
+    # Parse HTML Object 
+    response = requests.get(url)
+    soup=bs(response.text, 'lxml')
+    
+    # Find items
+    items=soup.find_all('div',class_='item')
 
     # initialize url list
     hemisphere_image_urls = []
@@ -122,22 +116,21 @@ def scrape():
     # Store the base ul 
     base_url = 'https://astrogeology.usgs.gov'
 
-    # Loop through the items
     for i in items: 
         # Store title and link
         title = i.find('h3').text
-        partial_img_url = i.find('a', class_='itemLink product-item')['href']
-    
-        # Visit the link that contains the full image website 
-        browser.visit(base_url + partial_img_url)
-        time.sleep(5)
-    
+        relative_url=i.find('a', class_='itemLink product-item')['href']
+        
         # Parse HTML Object for each hemisphere
-        hemi_img_html = browser.html
-        soup = bs(hemi_img_html, 'html.parser')
-    
-        # find image source and add to list
-        img_url = base_url + soup.find('img', class_='wide-image')['src']
+        url=base_url + relative_url
+        response = requests.get(url)
+        soup = bs(response.text, 'lxml')
+        
+        # find image source and add to dict
+        relative_img_url=soup.find('img', class_='wide-image')['src']
+        img_url = base_url +relative_img_url
+        
+        # Add dict to list
         hemisphere_image_urls.append({"title" : title, "img_url" : img_url})
 
     # store hemisphere_image_urls
